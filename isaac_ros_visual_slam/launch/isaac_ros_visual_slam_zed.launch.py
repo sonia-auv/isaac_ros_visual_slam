@@ -20,16 +20,21 @@ import os
 from ament_index_python.packages import get_package_share_directory
 
 import launch
-from launch.actions import TimerAction
-from launch.substitutions import Command
+from launch.actions import TimerAction, IncludeLaunchDescription
+from launch.substitutions import Command, PathJoinSubstitution
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
     """Launch file which brings up visual slam node configured for RealSense."""
     # The zed camera mode name. zed, zed2, zed2i, zedm, zedx or zedxm
-    camera_model = 'zed2'
+    auv = os.getenv('AUV')
+    if auv == 'AUV8':
+        camera_model = 'zedm'
+    else:
+        camera_model = 'zed2i'
 
     visual_slam_node = ComposableNode(
         name='visual_slam_node',
@@ -53,15 +58,13 @@ def generate_launch_description():
                     'accel_noise_density': 0.001862,
                     'accel_random_walk': 0.003,
                     'calibration_frequency': 200.0,
-                    'img_jitter_threshold_ms': 35.00
+                    'img_jitter_threshold_ms': 70.00
                     }],
-        remappings=[('stereo_camera/left/image', 'zed_node/left/image_rect_color_rgb'),
-                    ('stereo_camera/left/camera_info', 'zed_node/left/camera_info'),
-                    ('stereo_camera/right/image',
-                     'zed_node/right/image_rect_color_rgb'),
-                    ('stereo_camera/right/camera_info',
-                     'zed_node/right/camera_info'),
-                    ('visual_slam/imu', 'zed_node/imu/data')]
+        remappings=[('stereo_camera/left/image', 'zed/zed_node/left/image_rect_color'),
+                    ('stereo_camera/left/camera_info', 'zed/zed_node/left/camera_info'),
+                    ('stereo_camera/right/image', 'zed/zed_node/right/image_rect_color'),
+                    ('stereo_camera/right/camera_info', 'zed/zed_node/right/camera_info'),
+                    ('visual_slam/imu', 'zed/zed_node/imu/data')]
     )
 
     image_format_converter_node_left = ComposableNode(
@@ -72,8 +75,8 @@ def generate_launch_description():
                 'encoding_desired': 'rgb8',
         }],
         remappings=[
-            ('image_raw', 'zed_node/left/image_rect_color'),
-            ('image', 'zed_node/left/image_rect_color_rgb')]
+            ('image_raw', 'zed/zed_node/left_raw/image_rect_color'),
+            ('image', 'zed/zed_node/left/image_rect_color')]
     )
 
     image_format_converter_node_right = ComposableNode(
@@ -84,8 +87,8 @@ def generate_launch_description():
                 'encoding_desired': 'rgb8',
         }],
         remappings=[
-            ('image_raw', 'zed_node/right/image_rect_color'),
-            ('image', 'zed_node/right/image_rect_color_rgb')]
+            ('image_raw', 'zed/zed_node/right_raw/image_rect_color'),
+            ('image', 'zed/zed_node/right/image_rect_color')]
     )
 
     visual_slam_launch_container = ComposableNodeContainer(
@@ -142,6 +145,13 @@ def generate_launch_description():
         ]
     )
 
+    zed_wrapper_launch_dir = PathJoinSubstitution([FindPackageShare('zed_wrapper'), 'launch'])
+    zed_launch = IncludeLaunchDescription(
+        PathJoinSubstitution([zed_wrapper_launch_dir, 'zed_camera.launch.py']),
+          launch_arguments={'camera_model': camera_model}.items()
+        )
+
+
     # Adding delay because isaac_ros_visual_slam requires
     # tf from rsp_node at start
     return launch.LaunchDescription([
@@ -150,4 +160,4 @@ def generate_launch_description():
             actions=[visual_slam_launch_container]
         ),
         rsp_node,
-        zed_node])
+        zed_launch])
